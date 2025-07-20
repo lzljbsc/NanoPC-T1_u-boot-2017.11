@@ -1,0 +1,6 @@
+NANOPC_T1 BOARD
+M:	Chander Kashyap <k.chander@samsung.com>
+S:	Maintained
+F:	board/samsung/nanopc_t1/
+F:	include/configs/nanopc_t1.h
+F:	configs/nanopc-t1_defconfig

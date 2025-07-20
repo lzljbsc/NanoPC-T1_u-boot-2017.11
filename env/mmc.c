@@ -17,6 +17,7 @@
 #include <mmc.h>
 #include <search.h>
 #include <errno.h>
+#include <asm/arch/power.h>
 
 #if defined(CONFIG_ENV_SIZE_REDUND) &&  \
 	(CONFIG_ENV_SIZE_REDUND != CONFIG_ENV_SIZE)
@@ -71,6 +72,13 @@ __weak int mmc_get_env_addr(struct mmc *mmc, int copy, u32 *env_addr)
 
 __weak int mmc_get_env_dev(void)
 {
+	unsigned int boot_mode;
+
+	boot_mode = get_boot_mode();
+	if (boot_mode == BOOT_MODE_SD)
+		return 1;
+	else if ((boot_mode == BOOT_MODE_EMMC_SD) || (boot_mode == BOOT_MODE_EMMC))
+		return 0;
 	return CONFIG_SYS_MMC_ENV_DEV;
 }
 

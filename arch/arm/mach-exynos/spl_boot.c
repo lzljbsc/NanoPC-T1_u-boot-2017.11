@@ -227,9 +227,13 @@ void copy_uboot_to_ram(void)
 		copy_bl2 = get_irom_func(MMC_INDEX);
 		break;
 #ifdef CONFIG_SUPPORT_EMMC_BOOT
-	case BOOT_MODE_EMMC:
+    case BOOT_MODE_EMMC:
+	case BOOT_MODE_EMMC_SD:
 		/* Set the FSYS1 clock divisor value for EMMC boot */
+#ifndef CONFIG_NANOPC_T1
+        /* just for exynos5 can be call */
 		emmc_boot_clk_div_set();
+#endif
 
 		copy_bl2_from_emmc = get_irom_func(EMMC44_INDEX);
 		end_bootop_from_emmc = get_irom_func(EMMC44_END_INDEX);
@@ -289,6 +293,16 @@ void board_init_f(unsigned long bootflag)
 	__attribute__((noreturn)) void (*uboot)(void);
 
 	setup_global_data(&local_gd);
+
+#if 1
+    /* LED1 */
+    writel(0x00001111, 0x110002E0);
+    writel(0x0e, 0x110002E4);
+
+    /* LED2 */
+    //writel(0x00001111, 0x110002E0);
+    //writel(0x0d, 0x110002E4);
+#endif
 
 	if (do_lowlevel_init())
 		power_exit_wakeup();

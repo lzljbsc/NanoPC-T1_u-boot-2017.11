@@ -163,6 +163,27 @@ static void exynos5_set_ps_hold_ctrl(void)
 			EXYNOS_PS_HOLD_CONTROL_DATA_HIGH);
 }
 
+#ifdef CONFIG_NANOPC_T1
+static void exynos4x12_set_ps_hold_ctrl(void)
+{
+    struct exynos4x12_power *power = 
+        (struct exynos4x12_power *)samsung_get_base_power();
+
+    /* value: 1000000000B */
+    setbits_le32(&power->ps_hold_control, EXYNOS_PS_HOLD_CONTROL_DATA_HIGH);
+
+    /**
+     * GPX0PUD register
+     *
+     * 0x0 = Disables Pull-up/Pull-down
+     * 0x1 = Enables Pull-down
+     * 0x2 = Reserved
+     * 0x3 = Enables Pull-up
+     */
+    writel(0x3, (unsigned int *)0x11000c08);
+}
+#endif
+
 /*
  * Set ps_hold data driving value high
  * This enables the machine to stay powered on
@@ -173,6 +194,10 @@ void set_ps_hold_ctrl(void)
 {
 	if (cpu_is_exynos5())
 		exynos5_set_ps_hold_ctrl();
+#ifdef CONFIG_NANOPC_T1
+    else if (cpu_is_exynos4())
+        exynos4x12_set_ps_hold_ctrl();
+#endif
 }
 
 
@@ -214,8 +239,13 @@ static uint32_t exynos5_get_reset_status(void)
 
 static uint32_t exynos4_get_reset_status(void)
 {
+#ifdef CONFIG_NANOPC_T1
+    struct exynos4x12_power *power = 
+        (struct exynos4x12_power *)samsung_get_base_power();
+#else
 	struct exynos4_power *power =
 		(struct exynos4_power *)samsung_get_base_power();
+#endif
 
 	return power->inform1;
 }
@@ -239,8 +269,13 @@ static void exynos5_power_exit_wakeup(void)
 
 static void exynos4_power_exit_wakeup(void)
 {
+#ifdef CONFIG_NANOPC_T1
+    struct exynos4x12_power *power = 
+        (struct exynos4x12_power *)samsung_get_base_power();
+#else
 	struct exynos4_power *power =
 		(struct exynos4_power *)samsung_get_base_power();
+#endif
 	typedef void (*resume_func)(void);
 
 	((resume_func)power->inform0)();

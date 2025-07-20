@@ -761,6 +761,15 @@ config CMD_MMC
 	help
 	  MMC memory mapped support.
 
+if CMD_MMC
+config CMD_FDISK
+	bool "mmc fdisk"
+	default y
+	help
+	  mmc fdisk.
+
+endif # CMD_MMC
+
 config CMD_NAND
 	bool "nand"
 	default y if NAND_SUNXI

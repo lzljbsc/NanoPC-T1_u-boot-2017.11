@@ -1,0 +1,12 @@
+if TARGET_NANOPC_T1
+
+config SYS_BOARD
+	default "nanopc_t1"
+
+config SYS_VENDOR
+	default "samsung"
+
+config SYS_CONFIG_NAME
+	default "nanopc_t1"
+
+endif

@@ -9,6 +9,7 @@
 #include <command.h>
 #include <console.h>
 #include <mmc.h>
+#include <asm/arch/power.h>
 
 static int curr_device = -1;
 
@@ -97,6 +98,28 @@ static struct mmc *init_mmc_device(int dev, bool force_init)
 		return NULL;
 	return mmc;
 }
+
+u64 get_mmcinfo_capacity(void)
+{
+        struct mmc *mmc;
+
+        if (curr_device < 0) {
+                if (get_mmc_num() > 0)
+                        curr_device = 0;
+                else {
+                        puts("No MMC device available\n");
+                        return 1;
+                }
+        }
+
+        mmc = init_mmc_device(curr_device, false);
+        if (!mmc)
+                return CMD_RET_FAILURE;
+
+        return mmc->capacity >> 30;
+}
+
+
 static int do_mmcinfo(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	struct mmc *mmc;
@@ -297,7 +320,7 @@ static int do_mmc_read(cmd_tbl_t *cmdtp, int flag,
 
 	return (n == cnt) ? CMD_RET_SUCCESS : CMD_RET_FAILURE;
 }
-static int do_mmc_write(cmd_tbl_t *cmdtp, int flag,
+int do_mmc_write(cmd_tbl_t *cmdtp, int flag,
 			int argc, char * const argv[])
 {
 	struct mmc *mmc;
@@ -385,11 +408,14 @@ static int do_mmc_part(cmd_tbl_t *cmdtp, int flag,
 	puts("get mmc type error!\n");
 	return CMD_RET_FAILURE;
 }
-static int do_mmc_dev(cmd_tbl_t *cmdtp, int flag,
+
+extern int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data);
+int do_mmc_dev(cmd_tbl_t *cmdtp, int flag,
 		      int argc, char * const argv[])
 {
 	int dev, part = 0, ret;
 	struct mmc *mmc;
+	struct mmc_cmd cmd;
 
 	if (argc == 1) {
 		dev = curr_device;
@@ -411,11 +437,34 @@ static int do_mmc_dev(cmd_tbl_t *cmdtp, int flag,
 	if (!mmc)
 		return CMD_RET_FAILURE;
 
-	ret = blk_select_hwpart_devnum(IF_TYPE_MMC, dev, part);
-	printf("switch to partitions #%d, %s\n",
-	       part, (!ret) ? "OK" : "ERROR");
-	if (ret)
-		return 1;
+    if(strcmp(argv[0],"open") == 0){
+        cmd.cmdidx = MMC_CMD_SWITCH;
+        cmd.resp_type = MMC_RSP_R1b;
+        cmd.cmdarg = ((3<<24)|(179<<16)|(((1<<6)|(1<<3)|(1<<0))<<8));
+
+        ret = mmc_send_cmd(mmc, &cmd, NULL);
+        printf("switch to partitions #%d, %s\n",
+                part, (!ret) ? "OK" : "ERROR");
+        if (ret)
+            return 1;
+    }else if(strcmp(argv[0],"close") == 0)
+    {
+        cmd.cmdidx = MMC_CMD_SWITCH;
+        cmd.resp_type = MMC_RSP_R1b;
+        cmd.cmdarg = ((3<<24)|(179<<16)|(((1<<6)|(1<<3)|(0<<0))<<8));
+        ret = mmc_send_cmd(mmc, &cmd, NULL);
+        printf("eMMC CLOSE Success.!!\n");
+        if (ret)
+            return 1;
+
+    }
+
+
+	//ret = blk_select_hwpart_devnum(IF_TYPE_MMC, dev, part);
+	//printf("switch to partitions #%d, %s\n",
+	 //      part, (!ret) ? "OK" : "ERROR");
+	//if (ret)
+	//	return 1;
 
 	curr_device = dev;
 	if (mmc->part_config == MMCPART_NOAVAILABLE)
@@ -807,10 +856,11 @@ static cmd_tbl_t cmd_mmc[] = {
 #endif
 };
 
-static int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	cmd_tbl_t *cp;
-
+	unsigned int boot_mode  = get_boot_mode();
+	
 	cp = find_cmd_tbl(argv[1], cmd_mmc, ARRAY_SIZE(cmd_mmc));
 
 	/* Drop the mmc command */
@@ -824,7 +874,10 @@ static int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 
 	if (curr_device < 0) {
 		if (get_mmc_num() > 0) {
-			curr_device = 0;
+			if ((boot_mode == BOOT_MODE_EMMC_SD) || (boot_mode == BOOT_MODE_EMMC))
+				curr_device = 0;
+			else if (boot_mode == BOOT_MODE_SD)
+				curr_device = 1;
 		} else {
 			puts("No MMC device available\n");
 			return CMD_RET_FAILURE;

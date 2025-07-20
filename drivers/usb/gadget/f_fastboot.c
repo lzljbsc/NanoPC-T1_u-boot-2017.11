@@ -21,6 +21,7 @@
 #include <linux/compiler.h>
 #include <version.h>
 #include <g_dnl.h>
+#include <decompress_ext4.h>
 #ifdef CONFIG_FASTBOOT_FLASH_MMC_DEV
 #include <fb_mmc.h>
 #endif
@@ -44,6 +45,13 @@
  * (64 or 512 or 1024), else we break on certain controllers like DWC3
  * that expect bulk OUT requests to be divisible by maxpacket size.
  */
+
+int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
+int do_mmc_write(cmd_tbl_t *cmdtp, int flag,int argc, char * const argv[]);
+int do_mem_md(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
+int do_mmc_dev(cmd_tbl_t *cmdtp, int flag,int argc, char * const argv[]);
+u64 get_mmcinfo_capacity(void);
+//int get_mmcinfo_capacity(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[]);
 
 struct f_fastboot {
 	struct usb_function usb_function;
@@ -586,32 +594,192 @@ static void cb_continue(struct usb_ep *ep, struct usb_request *req)
 }
 
 #ifdef CONFIG_FASTBOOT_FLASH
+#define SECTOR_BITS             9       /* 512B */
+#define ext4_printf(args, ...)
+
+int write_raw_chunk(char* data, unsigned int sector, unsigned int sector_size) 
+{
+    char run_cmd[64];
+    int err ;
+    ext4_printf("write raw data in %d size %d \n", sector, sector_size);
+    sprintf(run_cmd,"mmc write  0x%x 0x%x 0x%x",(int)data, sector, sector_size);
+    err = run_command(run_cmd, 0);
+
+
+    return (1-err); //mj
+}
+int write_compressed_ext4(char* img_base, unsigned int sector_base) 
+{
+    unsigned int sector_size;
+    int total_chunks;
+    ext4_chunk_header *chunk_header;
+    ext4_file_header *file_header;
+    int err;
+    (void)err;
+
+    file_header = (ext4_file_header*)img_base;
+    total_chunks = file_header->total_chunks;
+
+    ext4_printf("total chunk = %d \n", total_chunks);
+
+    img_base += EXT4_FILE_HEADER_SIZE;
+
+    while(total_chunks) {
+        chunk_header = (ext4_chunk_header*)img_base;
+        sector_size = (chunk_header->chunk_size * file_header->block_size) >> SECTOR_BITS;
+
+        switch(chunk_header->type)
+        {
+            case EXT4_CHUNK_TYPE_RAW:
+                ext4_printf("raw_chunk \n");
+                err = write_raw_chunk(img_base + EXT4_CHUNK_HEADER_SIZE,
+                        sector_base, sector_size);
+                //if(err)//mj for emergency
+                //{
+                //      printf("[ERROR] System image write fail.please try again..\n");
+                //    return err;
+                //}
+                //else
+                //{
+                sector_base += sector_size;
+                break;
+                //}
+            case EXT4_CHUNK_TYPE_FILL:
+                ext4_printf("fill_chunk \n");
+                sector_base += sector_size;
+                break;
+
+            case EXT4_CHUNK_TYPE_NONE:
+                ext4_printf("none chunk \n");
+                sector_base += sector_size;
+                break;
+
+            default:
+                ext4_printf("unknown chunk type \n");
+                sector_base += sector_size;
+                break;
+        }
+        total_chunks--;
+        ext4_printf("remain chunks = %d \n", total_chunks);
+
+        img_base += chunk_header->total_size;
+    };
+
+    ext4_printf("write done \n");
+    return 0;
+}
+
+/* 分区方式参考 include/configs/nanopc_t1.h */
+char *argv_fwbl1[5]  = { "mmc","write", "40000000","0","10"};
+char *argv_bl2[5]  = { "mmc","write", "40000000","10","20"};
+char *argv_bootloader[5]  = { "mmc","write", "40000000","30","400"};
+char *argv_kernel[5]  = { "mmc","write", "40000000","800","5000"};
+char *argv_dtb[5]  = { "mmc","write", "40000000","5800","200"};
+char *argv_ramdisk[5]  = { "mmc","write", "40000000","8000","18000"};
+char *argv_system[5]  = { "mmc","write", "40000000","20CC7","100000"};
 static void cb_flash(struct usb_ep *ep, struct usb_request *req)
 {
-	char *cmd = req->buf;
-	char response[FASTBOOT_RESPONSE_LEN];
+    char *cmd = req->buf;
+    char response[FASTBOOT_RESPONSE_LEN];
 
-	strsep(&cmd, ":");
-	if (!cmd) {
-		pr_err("missing partition name");
-		fastboot_tx_write_str("FAILmissing partition name");
-		return;
-	}
+    //char *argv[2]  = { "md","40000000"};
+    char *open_emmc[2]  = { "open","   "};
+    char *close_emmc[2]  = { "close","   "};
 
-	/* initialize the response buffer */
-	fb_response_str = response;
+    static cmd_tbl_t cmdtp;
+    char value[] = {"mmc"};
+    //char run_cmd[64];
 
-	fastboot_fail("no flash device defined");
+    unsigned int addr = 0x40000000;
+
+    /* start_8G start_16G 是向emmc中写入 system 分区时的起始扇区
+     * 在 include/configs/nanopc_t1.h 中定义的 CFG_PARTITION_START
+     * 为什么 start_8G 不是一个对齐的扇区呢？
+     * 因为在 drivers/usb/gadget/f_fastboot.c 中，小于8G的emmc
+     * 会按照 CHS 访问方式进行分区，所以不会整好对齐
+     * 这里是使用 CFG_PARTITION_START 计算出 分区的 CHS 对应的扇区号 */
+    unsigned int start_8G = 0x20CC7;
+    unsigned int start_16G = 0x10000;
+
+    cmdtp.name = &value[0];
+    cmdtp.maxargs = 29;
+    cmdtp.repeatable = 1;
+    cmdtp.cmd = do_mmc_write;
+    cmdtp.usage = NULL;
+
+
+    strsep(&cmd, ":");
+    if (!cmd) {
+        pr_err("missing partition name");
+        fastboot_tx_write_str("FAILmissing partition name");
+        fastboot_fail("missing");
+        return;
+    }
+
+    /* initialize the response buffer */
+    fb_response_str = response;
+
+    //	fastboot_fail("no flash device defined");
 #ifdef CONFIG_FASTBOOT_FLASH_MMC_DEV
-	fb_mmc_flash_write(cmd, (void *)CONFIG_FASTBOOT_BUF_ADDR,
-			   download_bytes);
+    //	fb_mmc_flash_write(cmd, (void *)CONFIG_FASTBOOT_BUF_ADDR,
+    //			   download_bytes);
+
+    printf("---%s---\n",cmd);
+
+    if(strstr(cmd,"fwbl1") != NULL)
+    {
+        do_mmc_dev(NULL,0,2,open_emmc);//open emmc
+        do_mmcops(&cmdtp,0,5,argv_fwbl1);
+        do_mmc_dev(NULL,0,2,close_emmc);//close emmc
+        fastboot_okay("fwbl1");
+    }else if(strstr(cmd,"bl2") != NULL)
+    {
+        do_mmc_dev(NULL,0,2,open_emmc);//open emmc
+        do_mmcops(&cmdtp,0,5,argv_bl2);
+        do_mmc_dev(NULL,0,2,close_emmc);//close emmc
+        fastboot_okay("bl2");
+    }else if(strstr(cmd,"bootloader") != NULL)
+    {
+        do_mmc_dev(NULL,0,2,open_emmc);//open emmc
+        do_mmcops(&cmdtp,0,5,argv_bootloader);
+        do_mmc_dev(NULL,0,2,close_emmc);//close emmc
+        fastboot_okay("bootloader");
+    }else if(strstr(cmd, "kernel") != NULL)
+    {
+        do_mmcops(&cmdtp,0,5,argv_kernel);
+        fastboot_okay("kernel");
+    }else if(strstr(cmd,"dtb") != NULL)
+    {
+        do_mmcops(&cmdtp,0,5,argv_dtb);
+        fastboot_okay("dtb");
+    }else if(strstr(cmd,"ramdisk") != NULL)
+    {
+        do_mmcops(&cmdtp,0,5,argv_ramdisk);
+        fastboot_okay("ramdisk");
+    }else if(strstr(cmd,"system") != NULL)
+    {
+        //      do_mmcops(&cmdtp,0,5,argv_system);
+        if(get_mmcinfo_capacity() > 8){
+            write_compressed_ext4((char *)addr,start_16G);
+        }
+        else{
+            write_compressed_ext4((char *)addr,start_8G);
+        }
+        fastboot_okay("system");
+    }else
+    {
+        fastboot_fail("error");
+    }
+
+    printf("\n\n");
+
 #endif
 #ifdef CONFIG_FASTBOOT_FLASH_NAND_DEV
-	fb_nand_flash_write(cmd,
-			    (void *)CONFIG_FASTBOOT_BUF_ADDR,
-			    download_bytes);
+    fb_nand_flash_write(cmd,
+            (void *)CONFIG_FASTBOOT_BUF_ADDR,
+            download_bytes);
 #endif
-	fastboot_tx_write_str(response);
+    fastboot_tx_write_str(response);
 }
 #endif
 
