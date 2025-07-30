@@ -68,6 +68,8 @@
 #define COPY_BL2_FNPTR_ADDR	0x02020030
 #define CONFIG_SPL_TEXT_BASE	0x02023400 /* 0x02021410 */
 
+#define CONFIG_SYS_BOOTM_LEN    (30 << 20)      /* Increase max gunzip size */
+
 /* 
  * machid 设置为 0x1200(4608) 与老版本uboot兼容
  *
@@ -81,23 +83,33 @@
 #define CONFIG_EXTRA_ENV_SETTINGS \
     "loadaddr=0x40008000 \0" \
     "kernel_name=uImage \0" \
+    "kernel_sector_start=0x800 \0" \
+    "kernel_sector_num=0xF000 \0" \
     "dtb_addr=0x41000000 \0" \
     "dtb_name=exynos4412-nanopc_t1.dtb \0" \
+    "dtb1_sector_start=0xF800 \0" \
+    "dtb2_sector_start=0xFA00 \0" \
+    "dtb3_sector_start=0xFC00 \0" \
+    "dtb4_sector_start=0xFE00 \0" \
+    "dtb_sector_start=0xF800 \0" \
+    "dtb_sector_num=0x200 \0" \
     "ramdiskaddr=0x48000000 \0" \
     "ramdisk_name=rootfs.cpio.uboot \0" \
+    "ramdisk_sector_start=0x10000 \0" \
+    "ramdisk_sector_num=0x10000 \0" \
     CONFIG_DEFAULT_CONSOLE \
     "bootargs=root=/dev/mmcblk0p2 rw rootfstype=ext4 rootwait init=/linuxrc earlyprintk " \
     CONFIG_DEFAULT_CONSOLE " \0" \
     "mmcdev=0 \0" \
     "mmcpart=2 \0" \
     "bootm_read=" \
-    "mmc read ${loadaddr} 0x800 0x5000; " \
-    "mmc read ${dtb_addr} 0x5800 0x200; " \
+    "mmc read ${loadaddr} ${kernel_sector_start} ${kernel_sector_num}; " \
+    "mmc read ${dtb_addr} ${dtb_sector_start} ${dtb_sector_num}; " \
     "bootm ${loadaddr} - ${dtb_addr} \0" \
     "bootm_ramdisk_read=" \
-    "mmc read ${loadaddr} 0x800 0x5000; " \
-    "mmc read ${dtb_addr} 0x5800 0x200; " \
-    "mmc read ${ramdiskaddr} 0x8000 0x4000; " \
+    "mmc read ${loadaddr} ${kernel_sector_start} ${kernel_sector_num}; " \
+    "mmc read ${dtb_addr} ${dtb_sector_start} ${dtb_sector_num}; " \
+    "mmc read ${ramdiskaddr} ${ramdisk_sector_start} ${ramdisk_sector_num}; " \
     "bootm ${loadaddr} ${ramdiskaddr} ${dtb_addr} \0" \
     "bootm_load=" \
     "load mmc ${mmcdev}:${mmcpart} ${loadaddr} ${kernel_name}; " \
@@ -109,11 +121,11 @@
     "load mmc ${mmcdev}:${mmcpart} ${ramdiskaddr} ${ramdisk_name}; " \
     "bootm ${loadaddr} ${ramdiskaddr} ${dtb_addr} \0" \
     "bootz_read=" \
-    "mmc read ${loadaddr} 0x800 0x2000; " \
+    "mmc read ${loadaddr} ${kernel_sector_start} ${kernel_sector_num}; " \
     "bootz ${loadaddr} \0" \
     "bootz_ramdisk_read=" \
-    "mmc read ${loadaddr} 0x800 0x2000; " \
-    "mmc read ${ramdiskaddr} 0x8000 0x4000; " \
+    "mmc read ${loadaddr} ${kernel_sector_start} ${kernel_sector_num}; " \
+    "mmc read ${ramdiskaddr} ${ramdisk_sector_start} ${ramdisk_sector_num}; " \
     "bootz ${loadaddr} ${ramdiskaddr} \0"
 
 #define CONFIG_BOOTCOMMAND \
@@ -137,8 +149,10 @@
  *    新版本的uboot 写入到 mmc中
  * */
 /* fwbl1 bl2 bootloader env 占用 emmc 最前面的 1MB区域
- * kernel dtb 占用 1MB - 12MB区域 kernel 10MB, dtb 1MB
- * ramdisk 占用 16MB - 64MB 区域
+ * 其中 fwbl1 bl2 bootloader 是在 emmc 的 boot0 分区中
+ * kernel dtb 占用 1MB - 32MB区域 kernel 30MB, dtb 1MB
+ * 其中 dtb 分四个空间, 每个空间 256KB 默认从第一个启动
+ * ramdisk 占用 32MB - 64MB 区域
  * system及其它的数据分区 占用 64MB 以后区域
  * */
 /* 分区名       起始扇区(512)       扇区数量        分区大小
@@ -147,10 +161,10 @@
  * bootloader:  48                  1024            512KB
  * env:         1072                16              8KB
  *
- * kernel:      2048                20480           10MB
- * dtb:         22528               2048            1MB
+ * kernel:      2048                61440           30MB
+ * dtb:         63488               2048            1MB
  *
- * ramdisk:     32768               98304           48MB
+ * ramdisk:     65536               65536           32MB
  *
  * 数据分区(默认在 fdisk.c 中设置)
  * 分区名       分区大小

@@ -41,6 +41,9 @@ extern char *argv_bl2[5];
 extern char *argv_bootloader[5];
 extern char *argv_kernel[5];
 extern char *argv_dtb[5];
+extern char *argv_dtb2[5];
+extern char *argv_dtb3[5];
+extern char *argv_dtb4[5];
 extern char *argv_ramdisk[5];
 extern char *argv_system[5];
 void fastboot_ptn(void)
@@ -50,6 +53,9 @@ void fastboot_ptn(void)
     printf("ptn 2 name='bootloader' start=0x%s \tlen=0x%s\r\n", argv_bootloader[3], argv_bootloader[4]);
     printf("ptn 3 name='kernel'     start=0x%s \tlen=0x%s\r\n", argv_kernel[3], argv_kernel[4]);
     printf("ptn 4 name='dtb'        start=0x%s \tlen=0x%s\r\n", argv_dtb[3], argv_dtb[4]);
+    printf("ptn 4 name='dtb2'       start=0x%s \tlen=0x%s\r\n", argv_dtb2[3], argv_dtb2[4]);
+    printf("ptn 4 name='dtb3'       start=0x%s \tlen=0x%s\r\n", argv_dtb3[3], argv_dtb3[4]);
+    printf("ptn 4 name='dtb4'       start=0x%s \tlen=0x%s\r\n", argv_dtb4[3], argv_dtb4[4]);
     printf("ptn 4 name='ramdisk'    start=0x%s \tlen=0x%s\r\n", argv_ramdisk[3], argv_ramdisk[4]);
     printf("ptn 5 name='system'     start=0x%s \tlen=0x%s\r\n", argv_system[3], argv_system[4]);
 }

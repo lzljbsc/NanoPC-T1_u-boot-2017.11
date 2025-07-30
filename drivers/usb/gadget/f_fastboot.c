@@ -12,6 +12,7 @@
  */
 #include <config.h>
 #include <common.h>
+#include <environment.h>
 #include <errno.h>
 #include <fastboot.h>
 #include <malloc.h>
@@ -673,10 +674,17 @@ int write_compressed_ext4(char* img_base, unsigned int sector_base)
 char *argv_fwbl1[5]  = { "mmc","write", "40000000","0","10"};
 char *argv_bl2[5]  = { "mmc","write", "40000000","10","20"};
 char *argv_bootloader[5]  = { "mmc","write", "40000000","30","400"};
-char *argv_kernel[5]  = { "mmc","write", "40000000","800","5000"};
-char *argv_dtb[5]  = { "mmc","write", "40000000","5800","200"};
-char *argv_ramdisk[5]  = { "mmc","write", "40000000","8000","18000"};
+char *argv_kernel[5]  = { "mmc","write", "40000000","800","F000"};
+char *argv_dtb[5]  = { "mmc","write", "40000000","F800","200"};
+char *argv_dtb2[5]  = { "mmc","write", "40000000","FA00","200"};
+char *argv_dtb3[5]  = { "mmc","write", "40000000","FC00","200"};
+char *argv_dtb4[5]  = { "mmc","write", "40000000","FE00","200"};
+char *argv_ramdisk[5]  = { "mmc","write", "40000000","10000","10000"};
 char *argv_system[5]  = { "mmc","write", "40000000","20CC7","100000"};
+/* 用于计算待写入的扇区数量
+ * download_bytes  是下载的镜像字节数 */
+char write_size[16];
+static unsigned int write_sectors;
 static void cb_flash(struct usb_ep *ep, struct usb_request *req)
 {
     char *cmd = req->buf;
@@ -746,14 +754,38 @@ static void cb_flash(struct usb_ep *ep, struct usb_request *req)
         fastboot_okay("bootloader");
     }else if(strstr(cmd, "kernel") != NULL)
     {
+        /* 向上对齐计算扇区数量 */
+        write_sectors = (download_bytes + 512) / 512;
+        sprintf(write_size, "0x%X", write_sectors);
+        env_set("kernel_sector_num", write_size);
+        env_save();
+        argv_kernel[4] = write_size;
         do_mmcops(&cmdtp,0,5,argv_kernel);
         fastboot_okay("kernel");
-    }else if(strstr(cmd,"dtb") != NULL)
+    }else if(strcmp(cmd,"dtb") == 0)
     {
         do_mmcops(&cmdtp,0,5,argv_dtb);
         fastboot_okay("dtb");
+    }else if(strcmp(cmd,"dtb2") == 0)
+    {
+        do_mmcops(&cmdtp,0,5,argv_dtb2);
+        fastboot_okay("dtb2");
+    }else if(strcmp(cmd,"dtb3") == 0)
+    {
+        do_mmcops(&cmdtp,0,5,argv_dtb3);
+        fastboot_okay("dtb3");
+    }else if(strcmp(cmd,"dtb4") == 0)
+    {
+        do_mmcops(&cmdtp,0,5,argv_dtb4);
+        fastboot_okay("dtb4");
     }else if(strstr(cmd,"ramdisk") != NULL)
     {
+        /* 向上对齐计算扇区数量 */
+        write_sectors = (download_bytes + 512) / 512;
+        sprintf(write_size, "0x%X", write_sectors);
+        env_set("ramdisk_sector_num", write_size);
+        env_save();
+        argv_ramdisk[4] = write_size;
         do_mmcops(&cmdtp,0,5,argv_ramdisk);
         fastboot_okay("ramdisk");
     }else if(strstr(cmd,"system") != NULL)
